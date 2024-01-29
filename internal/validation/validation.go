@@ -1,4 +1,4 @@
-package internal
+package validation
 
 import (
 	"net/mail"

@@ -1,39 +1,67 @@
 package main
 
 import (
-	api "awesomeProject/api"
-	"crypto/subtle"
+	"awesomeProject/api"
+	"awesomeProject/internal/cash"
+	"awesomeProject/internal/db"
+	"awesomeProject/internal/token"
+	"context"
 	"fmt"
 	"os"
 
-	"github.com/joho/godotenv"
 	"github.com/labstack/echo/v4"
-	"github.com/labstack/echo/v4/middleware"
 	log "github.com/sirupsen/logrus"
 )
 
 func main() {
-	err := godotenv.Load(".env")
+	globalClient, err := db.ConnectToMongo()
 	if err != nil {
-		log.Fatal(err)
+		log.Panic(fmt.Errorf("mongo connect error: %s", err))
 	}
-	e := echo.New()
+	defer globalClient.Disconnect(context.TODO())
 
+	redisClient, err := cash.InitRedis()
+	if err != nil {
+		log.Panic(fmt.Errorf("redis connect error: %s", err))
+	}
+	defer redisClient.Close()
+
+	e := echo.New()
 	e.GET("/", api.Hello)
-	e.GET("/users/:page", api.GetAllUsers)
-	e.GET("/users/", api.GetAllUsers)
-	e.POST("/register/", api.UserRegister)
+	e.GET("/users/:page", func(c echo.Context) error {
+		return api.GetAllUsers(c, globalClient, redisClient)
+	})
+	e.GET("/users/", func(c echo.Context) error {
+		return api.GetAllUsers(c, globalClient, redisClient)
+	})
+
+	e.POST("/register/", func(c echo.Context) error {
+		return api.UserRegister(c, globalClient)
+	})
+	e.POST("/log-in/", func(c echo.Context) error {
+		return api.Login(c, globalClient)
+	})
+	e.GET("/rating/:nickname/", func(c echo.Context) error {
+		return api.GetRating(c, globalClient, redisClient)
+	})
 
 	g := e.Group("/profile")
-	g.Use(middleware.BasicAuth(func(username, password string, c echo.Context) (bool, error) {
-		if subtle.ConstantTimeCompare([]byte(username), []byte("admin")) == 1 &&
-			subtle.ConstantTimeCompare([]byte(password), []byte("admin")) == 1 {
-			return true, nil
-		}
-		return false, nil
-	}))
-	g.POST("/edit/", api.UserEdit)
-	g.GET("/:nickname/", api.UserProfile)
+	g.Use(token.JwtMiddleware)
+	g.POST("/edit/", func(c echo.Context) error {
+		return api.UserEdit(c, globalClient)
+	})
+	g.GET("/:nickname/", func(c echo.Context) error {
+		return api.UserProfile(c, globalClient, redisClient)
+	})
+	g.POST("/delete/:nickname/", func(c echo.Context) error {
+		return api.Delete(c, globalClient)
+	})
+	g.POST("/add-rating/:nickname/", func(c echo.Context) error {
+		return api.ChangeRating(c, globalClient, true)
+	})
+	g.POST("/sub-rating/:nickname/", func(c echo.Context) error {
+		return api.ChangeRating(c, globalClient, false)
+	})
 
 	e.Logger.Fatal(e.Start(fmt.Sprintf(":%s", os.Getenv("port"))))
 }

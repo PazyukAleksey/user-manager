@@ -1,0 +1,19 @@
+version: '3'
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: my-golang-app
+    depends_on:
+      - redis
+    ports:
+      - "8080:8080"
+
+  redis:
+    image: redis:latest
+    container_name: my-redis-container
+    ports:
+      - "6379:6379"
+    volumes:
+      - ./redis-data:/data

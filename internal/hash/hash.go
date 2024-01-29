@@ -1,4 +1,4 @@
-package internal
+package hash
 
 import (
 	"crypto/md5"
